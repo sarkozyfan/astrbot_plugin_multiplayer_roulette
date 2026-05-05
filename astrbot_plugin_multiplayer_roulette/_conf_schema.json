@@ -1,0 +1,50 @@
+{
+  "roulette_timeout_seconds": {
+    "description": "房间操作超时时间（秒）",
+    "type": "int",
+    "default": 180,
+    "hint": "每次行动后刷新计时，超时后自动解散房间"
+  },
+  "roulette_min_hp": {
+    "description": "每局随机初始生命值下限",
+    "type": "int",
+    "default": 2,
+    "hint": "开局时随机一次生命值，全体玩家相同"
+  },
+  "roulette_max_hp": {
+    "description": "每局随机初始生命值上限",
+    "type": "int",
+    "default": 5,
+    "hint": "必须大于等于生命值下限"
+  },
+  "roulette_min_shells": {
+    "description": "每轮装填的最少弹药数",
+    "type": "int",
+    "default": 2,
+    "hint": "每轮装弹数量会在最少和最多之间随机"
+  },
+  "roulette_max_shells": {
+    "description": "每轮装填的最多弹药数",
+    "type": "int",
+    "default": 9,
+    "hint": "必须大于等于最少弹药数"
+  },
+  "roulette_items_per_round": {
+    "description": "每次装填后每名存活玩家获得的道具数量",
+    "type": "int",
+    "default": 3,
+    "hint": "设为 0 可关闭道具"
+  },
+  "roulette_allow_ai_trigger": {
+    "description": "是否允许 AI 自然语言触发开始/开枪/状态",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后仍可使用命令"
+  },
+  "ai_trigger_delay": {
+    "description": "AI 工具触发后的延迟时间（秒）",
+    "type": "int",
+    "default": 2,
+    "hint": "等待 AI 消息发送完成后再发送游戏结果"
+  }
+}

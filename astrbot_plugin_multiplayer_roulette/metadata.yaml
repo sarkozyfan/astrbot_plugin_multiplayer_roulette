@@ -1,0 +1,9 @@
+name: astrbot_plugin_multiplayer_roulette
+display_name: 🔫 恶魔轮盘赌
+version: 2.0.0
+author: sarkozyfan
+description: 基于恶魔轮盘赌规则的qq群游戏
+repo: https://github.com/sarkozyfan/astrbot_plugin_multiplayer_roulette
+astrbot_version: ">=3.5.0"
+support_platforms:
+  - aiocqhttp
