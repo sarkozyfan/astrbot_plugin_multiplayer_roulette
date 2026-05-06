@@ -52,6 +52,7 @@
 - `roulette_min_hp` / `roulette_max_hp`：每局随机初始 HP 范围
 - `roulette_min_shells` / `roulette_max_shells`：每轮装填弹药数范围
 - `roulette_min_live_shells`：每轮装填保底实弹数
+- `roulette_dynamic_shell_cap`：低血量时自动缩减装弹上限，默认开启
 - `roulette_items_per_round`：每轮每名存活玩家获得的道具数
 - `roulette_allow_ai_trigger`：是否允许 AI 触发
 - `ai_trigger_delay`：AI 触发延迟

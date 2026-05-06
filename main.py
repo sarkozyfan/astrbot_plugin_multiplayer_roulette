@@ -70,6 +70,7 @@ DEFAULT_SETTINGS = {
     "roulette_min_shells": 2,
     "roulette_max_shells": 9,
     "roulette_min_live_shells": 1,
+    "roulette_dynamic_shell_cap": True,
     "roulette_items_per_round": 3,
     "roulette_allow_ai_trigger": True,
     "ai_trigger_delay": 2,
@@ -107,6 +108,7 @@ class MultiplayerRoulettePlugin(Star):
         self.min_shells = DEFAULT_SETTINGS["roulette_min_shells"]
         self.max_shells = DEFAULT_SETTINGS["roulette_max_shells"]
         self.min_live_shells = DEFAULT_SETTINGS["roulette_min_live_shells"]
+        self.dynamic_shell_cap = DEFAULT_SETTINGS["roulette_dynamic_shell_cap"]
         self.items_per_round = DEFAULT_SETTINGS["roulette_items_per_round"]
         self.ai_trigger_delay = DEFAULT_SETTINGS["ai_trigger_delay"]
         self.allow_ai_start = DEFAULT_SETTINGS["roulette_allow_ai_trigger"]
@@ -224,6 +226,10 @@ class MultiplayerRoulettePlugin(Star):
         )
         if self.min_live_shells >= self.max_shells:
             self.min_live_shells = max(1, self.max_shells - 1)
+        self.dynamic_shell_cap = self._to_bool(
+            cfg.get("roulette_dynamic_shell_cap"),
+            DEFAULT_SETTINGS["roulette_dynamic_shell_cap"],
+        )
 
         self.items_per_round = max(
             0,
@@ -463,9 +469,15 @@ class MultiplayerRoulettePlugin(Star):
     def _shell_name(self, shell: str) -> str:
         return "实弹" if shell == LIVE else "空包弹"
 
-    def _make_shells(self, player_count: int) -> list[str]:
+    def _shell_cap_for_hp(self, hp: int | None) -> int:
+        if not self.dynamic_shell_cap or hp is None:
+            return self.max_shells
+        return max(self.min_shells, min(self.max_shells, hp * 2))
+
+    def _make_shells(self, player_count: int, hp: int | None = None) -> list[str]:
         self._refresh_settings()
-        shell_count = random.randint(self.min_shells, self.max_shells)
+        max_shells = self._shell_cap_for_hp(hp)
+        shell_count = random.randint(self.min_shells, max_shells)
         min_live = min(self.min_live_shells, max(1, shell_count - 1))
         live_count = random.randint(min_live, max(1, shell_count - 1))
         blank_count = shell_count - live_count
@@ -503,8 +515,16 @@ class MultiplayerRoulettePlugin(Star):
             lines.append(f"- {player['name']} 获得：{self._format_items(gained)}{suffix}")
         return lines
 
+    def _game_shell_cap_hp(self, game: dict[str, Any]) -> int | None:
+        alive = self._alive_players(game)
+        if not alive:
+            return None
+        return max(game["players"][uid].get("max_hp", 0) for uid in alive)
+
     def _reload_shells(self, game: dict[str, Any]) -> list[str]:
-        game["shells"] = self._make_shells(len(game["players"]))
+        game["shells"] = self._make_shells(
+            len(game["players"]), hp=self._game_shell_cap_hp(game)
+        )
         game["known_current"] = None
         lines = [self._shell_summary(game["shells"])]
         lines.extend(self._deal_items(game))
@@ -634,7 +654,7 @@ class MultiplayerRoulettePlugin(Star):
             "players": players,
             "order": player_ids,
             "turn": player_ids[0],
-            "shells": self._make_shells(len(player_ids)),
+            "shells": self._make_shells(len(player_ids), hp=game_hp),
             "known_current": None,
             "skip_user": None,
             "last_skip": None,
@@ -939,6 +959,7 @@ class MultiplayerRoulettePlugin(Star):
             f"- 初始 HP：{self.min_hp}-{self.max_hp}\n"
             f"- 装弹数量：{self.min_shells}-{self.max_shells}\n"
             f"- 保底实弹：{self.min_live_shells}\n"
+            f"- 低血量缩减装弹上限：{'开启' if self.dynamic_shell_cap else '关闭'}\n"
             f"- 每轮道具：{self.items_per_round}\n"
             f"- AI 触发：{'开启' if self.allow_ai_start else '关闭'}\n"
             f"- AI 延迟：{self.ai_trigger_delay} 秒\n"

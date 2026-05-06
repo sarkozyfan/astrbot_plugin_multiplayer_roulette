@@ -35,6 +35,12 @@
     "default": 1,
     "hint": "实际值会被限制在 1 到 装弹数量-1 之间，确保仍有空包弹"
   },
+  "roulette_dynamic_shell_cap": {
+    "description": "低血量时自动缩减装弹上限",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后本局 HP 越低，装弹上限越低。规则：实际上限 = min(配置上限, 本局HP×2)"
+  },
   "roulette_items_per_round": {
     "description": "每次装填后每名存活玩家获得的道具数量",
     "type": "int",
