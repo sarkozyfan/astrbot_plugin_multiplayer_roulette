@@ -655,8 +655,8 @@ class MultiplayerRoulettePlugin(Star):
         lines.append(f"先手：{players[game['turn']]['name']}")
         lines.append(
             "行动：\n"
-            "- /轮盘 自己：朝自己开枪\n"
-            "- /轮盘 对方 @玩家：朝目标开枪，2 人局可省略 @\n"
+            "- /自己：朝自己开枪\n"
+            "- /对方 @玩家：朝目标开枪，2 人局可省略 @\n"
             "- /轮盘 使用 道具名 [@玩家]：使用道具\n"
             "- /轮盘 帮助：查看完整规则"
         )
@@ -878,6 +878,8 @@ class MultiplayerRoulettePlugin(Star):
         return f"""多人轮盘 v{self.plugin_version}
 
 /轮盘 开始 @玩家1 @玩家2 - 创建房间，发起人也会入场
+/自己 - 朝自己开枪
+/对方 @玩家 - 朝目标开枪，2人局可省略@
 /轮盘 自己 - 朝自己开枪
 /轮盘 对方 @玩家 - 朝目标开枪，2人局可省略@
 /轮盘 道具 - 查看自己的道具
@@ -1042,6 +1044,16 @@ class MultiplayerRoulettePlugin(Star):
             return
         self._cleanup_game(group_id)
         yield event.plain_result("房间已解散。")
+
+    @filter.command("自己")
+    async def quick_shoot_self(self, event: AstrMessageEvent):
+        async for result in self._cmd_shoot_self(event):
+            yield result
+
+    @filter.command("对方")
+    async def quick_shoot_other(self, event: AstrMessageEvent):
+        async for result in self._cmd_shoot_other(event):
+            yield result
 
     @roulette_group.command("开始")
     async def roulette_start(self, event: AstrMessageEvent):
