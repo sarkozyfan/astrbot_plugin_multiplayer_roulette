@@ -29,6 +29,12 @@
     "default": 9,
     "hint": "必须大于等于最少弹药数"
   },
+  "roulette_min_live_shells": {
+    "description": "每轮装填的保底实弹数",
+    "type": "int",
+    "default": 1,
+    "hint": "实际值会被限制在 1 到 装弹数量-1 之间，确保仍有空包弹"
+  },
   "roulette_items_per_round": {
     "description": "每次装填后每名存活玩家获得的道具数量",
     "type": "int",

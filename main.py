@@ -69,10 +69,13 @@ DEFAULT_SETTINGS = {
     "roulette_max_hp": 5,
     "roulette_min_shells": 2,
     "roulette_max_shells": 9,
+    "roulette_min_live_shells": 1,
     "roulette_items_per_round": 3,
     "roulette_allow_ai_trigger": True,
     "ai_trigger_delay": 2,
 }
+
+MAX_ITEMS_PER_PLAYER = 8
 
 
 @register(
@@ -103,6 +106,7 @@ class MultiplayerRoulettePlugin(Star):
         self.max_hp = DEFAULT_SETTINGS["roulette_max_hp"]
         self.min_shells = DEFAULT_SETTINGS["roulette_min_shells"]
         self.max_shells = DEFAULT_SETTINGS["roulette_max_shells"]
+        self.min_live_shells = DEFAULT_SETTINGS["roulette_min_live_shells"]
         self.items_per_round = DEFAULT_SETTINGS["roulette_items_per_round"]
         self.ai_trigger_delay = DEFAULT_SETTINGS["ai_trigger_delay"]
         self.allow_ai_start = DEFAULT_SETTINGS["roulette_allow_ai_trigger"]
@@ -211,6 +215,15 @@ class MultiplayerRoulettePlugin(Star):
         )
         if self.max_shells < self.min_shells:
             self.max_shells = self.min_shells
+        self.min_live_shells = max(
+            1,
+            self._to_int(
+                cfg.get("roulette_min_live_shells"),
+                DEFAULT_SETTINGS["roulette_min_live_shells"],
+            ),
+        )
+        if self.min_live_shells >= self.max_shells:
+            self.min_live_shells = max(1, self.max_shells - 1)
 
         self.items_per_round = max(
             0,
@@ -453,11 +466,22 @@ class MultiplayerRoulettePlugin(Star):
     def _make_shells(self, player_count: int) -> list[str]:
         self._refresh_settings()
         shell_count = random.randint(self.min_shells, self.max_shells)
-        live_count = random.randint(1, max(1, shell_count - 1))
+        min_live = min(self.min_live_shells, max(1, shell_count - 1))
+        live_count = random.randint(min_live, max(1, shell_count - 1))
         blank_count = shell_count - live_count
         shells = [LIVE] * live_count + [BLANK] * blank_count
         random.shuffle(shells)
         return shells
+
+    def _add_item(self, player: dict[str, Any], item: str) -> bool:
+        if len(player["items"]) >= MAX_ITEMS_PER_PLAYER:
+            return False
+        player["items"].append(item)
+        return True
+
+    def _return_item(self, player: dict[str, Any], item: str) -> None:
+        if not self._add_item(player, item):
+            logger.warning(f"道具返还失败，{player['name']} 道具已达上限")
 
     def _deal_items(self, game: dict[str, Any]) -> list[str]:
         self._refresh_settings()
@@ -467,9 +491,16 @@ class MultiplayerRoulettePlugin(Star):
         lines.append("抽取道具：")
         for uid in self._alive_players(game):
             player = game["players"][uid]
-            gained = random.choices(ITEM_POOL, k=self.items_per_round)
-            player["items"].extend(gained)
-            lines.append(f"- {player['name']} 获得：{self._format_items(gained)}")
+            available_slots = max(0, MAX_ITEMS_PER_PLAYER - len(player["items"]))
+            draw_count = min(self.items_per_round, available_slots)
+            if draw_count <= 0:
+                lines.append(f"- {player['name']} 道具已满，未获得新道具")
+                continue
+            gained = random.choices(ITEM_POOL, k=draw_count)
+            for item in gained:
+                self._add_item(player, item)
+            suffix = "" if draw_count == self.items_per_round else f"（道具上限 {MAX_ITEMS_PER_PLAYER}）"
+            lines.append(f"- {player['name']} 获得：{self._format_items(gained)}{suffix}")
         return lines
 
     def _reload_shells(self, game: dict[str, Any]) -> list[str]:
@@ -595,7 +626,7 @@ class MultiplayerRoulettePlugin(Star):
                 "hp": game_hp,
                 "max_hp": game_hp,
                 "items": [],
-                "damage_bonus": 0,
+                "saw_active": False,
             }
 
         random.shuffle(player_ids)
@@ -702,8 +733,9 @@ class MultiplayerRoulettePlugin(Star):
         lines.append(f"{shooter_player['name']} 朝 {target_word} 扣下扳机。")
 
         if shell == LIVE:
-            damage = 1 + int(shooter_player.get("damage_bonus", 0))
-            shooter_player["damage_bonus"] = 0
+            saw_active = bool(shooter_player.get("saw_active", False))
+            damage = 2 if saw_active else 1
+            shooter_player["saw_active"] = False
             target_player["hp"] = max(0, target_player["hp"] - damage)
             record["hits"] += 1
             lines.append(f"实弹。{target_player['name']} 受到 {damage} 点伤害，剩余 HP {target_player['hp']}。")
@@ -771,7 +803,7 @@ class MultiplayerRoulettePlugin(Star):
             if target is None and len(opponents) == 1:
                 target = opponents[0]
             if target is None:
-                player["items"].append(item_key)
+                self._return_item(player, item_key)
                 return ["手铐需要 @ 一个仍存活的目标。"]
             game["skip_user"] = target
             lines.append(f"{game['players'][target]['name']} 被铐住了，下一次本该行动时会被跳过。")
@@ -780,12 +812,15 @@ class MultiplayerRoulettePlugin(Star):
             player["hp"] = min(player["max_hp"], player["hp"] + 1)
             lines.append(f"恢复 {player['hp'] - before} 点 HP，当前 HP {player['hp']}。")
         elif item_key == "saw":
-            player["damage_bonus"] = int(player.get("damage_bonus", 0)) + 1
-            lines.append("下一发实弹伤害 +1。")
+            if player.get("saw_active"):
+                lines.append("锯子效果已经生效中，下一发实弹会造成 2 点伤害。")
+            else:
+                player["saw_active"] = True
+                lines.append("下一发实弹伤害 +1。空包不会消耗锯子效果。")
         elif item_key == "inverter":
             game["shells"][0] = BLANK if game["shells"][0] == LIVE else LIVE
-            game["known_current"] = game["shells"][0]
-            lines.append(f"当前第一发被逆转为：{self._shell_name(game['shells'][0])}。")
+            game["known_current"] = None
+            lines.append("当前第一发已经被逆转。")
         elif item_key == "phone":
             idx = random.randrange(len(game["shells"]))
             lines.append(f"手机显示：第 {idx + 1} 发是 {self._shell_name(game['shells'][idx])}。")
@@ -801,23 +836,26 @@ class MultiplayerRoulettePlugin(Star):
                 or target not in self._alive_players(game)
                 or not game["players"][target]["items"]
             ):
-                player["items"].append(item_key)
+                self._return_item(player, item_key)
                 return ["注射器目标必须是一个仍存活且拥有道具的玩家。"]
             if target is None:
                 if len(targets) == 1:
                     target = targets[0]
                 elif not targets:
-                    player["items"].append(item_key)
+                    self._return_item(player, item_key)
                     return ["没有可抢夺的目标：其他存活玩家都没有道具。"]
                 else:
-                    player["items"].append(item_key)
+                    self._return_item(player, item_key)
                     return ["多人局使用注射器需要 @ 一个拥有道具的目标。"]
             stolen = random.choice(game["players"][target]["items"])
             game["players"][target]["items"].remove(stolen)
-            player["items"].append(stolen)
-            lines.append(
-                f"从 {game['players'][target]['name']} 那里抢到了 {ITEM_NAMES.get(stolen, stolen)}。"
-            )
+            if self._add_item(player, stolen):
+                lines.append(
+                    f"从 {game['players'][target]['name']} 那里抢到了 {ITEM_NAMES.get(stolen, stolen)}。"
+                )
+            else:
+                game["players"][target]["items"].append(stolen)
+                lines.append(f"你的道具已达上限 {MAX_ITEMS_PER_PLAYER}，注射器没有抢到道具。")
         elif item_key == "expired_medicine":
             if random.random() < 0.5:
                 before = player["hp"]
@@ -860,13 +898,13 @@ class MultiplayerRoulettePlugin(Star):
 - 啤酒：退掉当前第一发并公开弹种
 - 手铐：跳过目标下一次回合
 - 香烟：恢复 1 点 HP，不超过自身上限
-- 锯子：下一发实弹伤害 +1
-- 逆转器：反转当前第一发实弹/空包
+- 锯子：下一发实弹伤害 +1，空包不消耗效果
+- 逆转器：反转当前第一发实弹/空包，不显示结果
 - 手机：查看随机位置的一发弹药
 - 过期药：50% 回血，50% 扣血
 - 注射器：抢夺目标随机一个道具
 
-规则：实弹造成伤害，空包不伤人；空包打自己会继续当前回合，其余射击结算后切换到下一名存活玩家。弹仓打空会重新随机装填并发放道具。"""
+规则：实弹造成伤害，空包不伤人；空包打自己会继续当前回合，其余射击结算后切换到下一名存活玩家。弹仓打空会重新随机装填并发放道具。每名玩家最多持有 8 个道具。"""
 
     def _personal_records(self, user_id: int, user_name: str) -> str:
         r = self._record_for(user_id)
@@ -898,6 +936,7 @@ class MultiplayerRoulettePlugin(Star):
             f"- 超时：{self.timeout} 秒\n"
             f"- 初始 HP：{self.min_hp}-{self.max_hp}\n"
             f"- 装弹数量：{self.min_shells}-{self.max_shells}\n"
+            f"- 保底实弹：{self.min_live_shells}\n"
             f"- 每轮道具：{self.items_per_round}\n"
             f"- AI 触发：{'开启' if self.allow_ai_start else '关闭'}\n"
             f"- AI 延迟：{self.ai_trigger_delay} 秒\n"
